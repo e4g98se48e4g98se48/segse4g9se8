@@ -1,5 +1,4 @@
 name: 🦙 Local LLM Web Interface (Optimized)
-
 on:
   workflow_dispatch:
     inputs:
@@ -24,11 +23,10 @@ concurrency:
 jobs:
   deploy-llama:
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 360
     env:
       CONTEXT_SIZE: ${{ inputs.context_size }}
       PORT: ${{ inputs.port }}
-
     steps:
       - name: 🦙 Show banner
         run: |
@@ -40,6 +38,7 @@ jobs:
           echo "  🏃 Runner:  $(uname -a)"
           echo "  💾 Memory:  $(free -h | awk '/Mem:/{print $2}')"
           echo "  🧠 CPUs:    $(nproc)"
+          echo "  ⏱️ Timeout:  6 Hours (360 minutes)"
           echo "  💽 Disk before cleanup:"
           df -h / | tail -1
 
@@ -67,7 +66,7 @@ jobs:
           curl -fsSL https://ollama.com/install.sh | sh
           pip install --no-cache-dir \
             fastapi uvicorn aiohttp httpx python-multipart \
-            jinja2 websockets pydantic
+            jinja2 websockets pydantic psutil
           ollama --version
           python --version
 
@@ -80,6 +79,7 @@ jobs:
           sudo systemctl disable ollama 2>/dev/null || true
           nohup ollama serve > /tmp/ollama.log 2>&1 &
           echo $! > /tmp/ollama.pid
+
           echo "⏳ Waiting for Ollama to become ready..."
           ready=false
           for i in $(seq 1 30); do
@@ -96,23 +96,50 @@ jobs:
             exit 1
           fi
 
-      - name: 📥 Download 10 Optimized Models
+      - name: 📥 Download 0.5B to 7B Models
         run: |
           echo "──────────────────────────────────────────"
-          echo " 📥  Downloading 10 models for 16GB RAM"
+          echo " 📥  Downloading All 0.5B to 7B Models"
           echo "──────────────────────────────────────────"
           
           MODELS=(
+            # --- Qwen Family (General & Code) ---
             "qwen2.5:0.5b"
-            "llama3.2:1b"
-            "gemma2:2b"
-            "llama3.2:3b"
-            "phi3:mini"
-            "mistral:7b"
+            "qwen2.5:1.5b"
+            "qwen2.5:3b"
             "qwen2.5:7b"
-            "llama3.1:8b"
-            "deepseek-r1:8b"
-            "qwen2.5:14b"
+            "qwen2.5-coder:0.5b"
+            "qwen2.5-coder:1.5b"
+            "qwen2.5-coder:3b"
+            "qwen2.5-coder:7b"
+            
+            # --- DeepSeek Family ---
+            "deepseek-r1:1.5b"
+            "deepseek-r1:7b"
+            "deepseek-coder:1.3b"
+            "deepseek-coder:6.7b"
+            
+            # --- Llama Family ---
+            "llama3.2:1b"
+            "llama3.2:3b"
+            "tinyllama"
+            
+            # --- Gemma Family ---
+            "gemma2:2b"
+            
+            # --- Phi Family ---
+            "phi3.5"
+            "phi3:mini"
+            
+            # --- Mistral Family ---
+            "mistral:7b"
+            "openhermes"
+            "dolphin-mistral"
+            
+            # --- Small & Fast Alternates ---
+            "smollm:1.7b"
+            "orca-mini:3b"
+            "stablelm2:1.6b"
           )
 
           total=${#MODELS[@]}
@@ -124,12 +151,11 @@ jobs:
             echo " [$current/$total] Pulling $model"
             echo "──────────────────────────────────────────"
             if ! ollama pull "$model"; then
-              echo "❌ Failed to pull $model – continuing anyway"
+              echo "❌ Failed to pull $model (Maybe out of disk space) – skipping to next..."
             fi
             echo "  💽 Disk usage now:"
             df -h / | tail -1
           done
-
           echo ""
           echo "✅ All pulls attempted. Final model list:"
           ollama list
@@ -138,13 +164,12 @@ jobs:
         run: |
           cat > ollama_server.py << 'PYEOF'
           #!/usr/bin/env python3
-          """Ollama-backed chat web server with a modern glassmorphic UI."""
-
           import json
           import os
           import logging
+          import platform
+          import psutil
           from typing import Optional, List
-
           import httpx
           import uvicorn
           from fastapi import FastAPI, HTTPException
@@ -180,6 +205,22 @@ jobs:
               except Exception as exc:
                   raise HTTPException(status_code=503, detail=str(exc))
 
+          @app.get("/api/sysinfo")
+          def sysinfo():
+              return {
+                  "cpu_threads": psutil.cpu_count(logical=True),
+                  "ram_total": f"{psutil.virtual_memory().total / (1024**3):.1f} GB",
+                  "os": platform.system() + " " + platform.release()
+              }
+
+          @app.get("/api/stats")
+          def stats():
+              return {
+                  "cpu_percent": psutil.cpu_percent(interval=None),
+                  "ram_percent": psutil.virtual_memory().percent,
+                  "ram_used": f"{psutil.virtual_memory().used / (1024**3):.1f} GB"
+              }
+
           @app.get("/api/models")
           async def list_models():
               try:
@@ -199,7 +240,6 @@ jobs:
           @app.post("/api/chat")
           async def chat(request: ChatRequest):
               ollama_messages = [{"role": m.role, "content": m.content} for m in request.messages]
-
               async def generate():
                   try:
                       async with httpx.AsyncClient(timeout=180) as client:
@@ -222,7 +262,6 @@ jobs:
                                   yield f"data: {json.dumps({'error': body.decode(errors='ignore')})}\n\n"
                                   yield "data: [DONE]\n\n"
                                   return
-
                               async for line in response.aiter_lines():
                                   line = line.strip()
                                   if not line:
@@ -251,13 +290,11 @@ jobs:
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Local LLM Studio</title>
-
-          <!-- Fonts -->
+          
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Vazirmatn:wght@400;500;600&display=swap" rel="stylesheet">
           
-          <!-- Markdown & Math -->
           <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
           <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
           <link id="hljsTheme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
@@ -265,7 +302,7 @@ jobs:
           <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
           <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
           <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
-
+          
           <style>
             :root {
               --bg: #09090b;
@@ -292,7 +329,7 @@ jobs:
                                 radial-gradient(circle at 85% 30%, rgba(6, 182, 212, 0.04), transparent 25%);
             }
             .sidebar {
-              width: 280px; background: var(--sidebar); border-right: 1px solid var(--border);
+              width: 290px; background: var(--sidebar); border-right: 1px solid var(--border);
               backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass);
               display: flex; flex-direction: column; padding: 20px; flex-shrink: 0; z-index: 10;
             }
@@ -306,9 +343,7 @@ jobs:
             
             .settings-group { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--text-secondary); }
             .settings-group label { display: flex; justify-content: space-between; align-items: center; }
-            .settings-group input[type="range"] { 
-              width: 100%; accent-color: var(--cyan); margin-top: 4px;
-            }
+            .settings-group input[type="range"] { width: 100%; accent-color: var(--cyan); margin-top: 4px; }
             #modelSelect {
               background: rgba(0,0,0,0.2); color: var(--text); border: 1px solid var(--border);
               border-radius: 8px; padding: 10px 12px; font-size: 14px; width: 100%; margin-bottom: 16px;
@@ -316,6 +351,19 @@ jobs:
             }
             #modelSelect:focus { border-color: var(--cyan); }
             #modelSelect option { background: var(--bg); }
+            
+            /* System Stats UI */
+            .system-stats {
+              background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+              border-radius: 12px; padding: 14px; margin-top: 20px;
+              font-size: 12px; display: flex; flex-direction: column; gap: 6px;
+            }
+            .stat-title { font-weight: 600; color: var(--text); margin-bottom: 2px; display: flex; align-items: center; gap: 6px; }
+            .stat-row { display: flex; justify-content: space-between; align-items: center; }
+            .stat-value { font-family: monospace; font-size: 13px; }
+            #sysSpecs { color: var(--text-secondary); margin-bottom: 8px; line-height: 1.4; }
+            .progress-bar { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; margin-top: 2px; }
+            .progress-fill { height: 100%; transition: width 0.3s ease; }
 
             .sidebar-footer {
               margin-top: auto; border-top: 1px solid var(--border); padding-top: 16px;
@@ -328,7 +376,7 @@ jobs:
             .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 8px currentColor; }
             .status-dot.ok { background: var(--ok); color: var(--ok); }
             .status-dot.bad { background: var(--danger); color: var(--danger); }
-
+            
             .main-content { flex: 1; display: flex; flex-direction: column; height: 100vh; position: relative; }
             .chat-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 20px 0 150px 0; scroll-behavior: smooth; }
             
@@ -396,7 +444,7 @@ jobs:
             
             .loading-dots::after { content: '...'; animation: dots 1.5s steps(4, end) infinite; }
             @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
-
+            
             @media (max-width: 768px) {
               .sidebar { position: fixed; height: 100vh; transform: translateX(-100%); transition: 0.3s ease; }
               .sidebar.open { transform: translateX(0); box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
@@ -412,6 +460,7 @@ jobs:
           </head>
           <body>
             <button class="menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')" style="display: none;">☰</button>
+            
             <div class="sidebar">
               <button class="new-chat-btn" onclick="clearChat()"><span>＋</span> New Chat</button>
               
@@ -428,6 +477,27 @@ jobs:
                   <label>Max Tokens <span id="tokenVal" style="color: var(--cyan);">2048</span></label>
                   <input type="range" id="maxTokens" min="128" max="4096" step="128" value="2048">
                 </div>
+              </div>
+
+              <!-- System Resource Monitor -->
+              <div class="system-stats">
+                <div class="stat-title">🖥️ Server Hardware</div>
+                <div id="sysSpecs">Loading...</div>
+                
+                <div class="stat-title" style="margin-top: 6px;">📊 Live Usage</div>
+                
+                <div class="stat-row">
+                  <span>CPU:</span>
+                  <span id="cpuVal" class="stat-value" style="color: var(--cyan);">0%</span>
+                </div>
+                <div class="progress-bar"><div id="cpuBar" class="progress-fill" style="background: var(--cyan); width: 0%;"></div></div>
+                
+                <div class="stat-row" style="margin-top: 8px;">
+                  <span>RAM:</span>
+                  <span id="ramVal" class="stat-value" style="color: var(--accent);">0%</span>
+                </div>
+                <div class="progress-bar"><div id="ramBar" class="progress-fill" style="background: var(--accent); width: 0%;"></div></div>
+                <div id="ramUsedText" style="text-align: right; font-size: 10px; color: var(--text-secondary); margin-top: 2px;">0 GB Used</div>
               </div>
 
               <div class="sidebar-footer">
@@ -520,6 +590,43 @@ jobs:
             const currentModelTag = document.getElementById('currentModelTag');
             
             let isStreaming = false, totalTokens = 0, messageHistory = [], controller = null, currentModel = null;
+            let statPollInterval;
+
+            // --- Stats & SysInfo Logic ---
+            async function fetchSysInfo() {
+              try {
+                const r = await fetch('/api/sysinfo');
+                const data = await r.json();
+                document.getElementById('sysSpecs').innerHTML = `OS: ${data.os}<br>CPU: ${data.cpu_threads} Cores<br>RAM: ${data.ram_total}`;
+              } catch (e) {
+                document.getElementById('sysSpecs').innerText = "Unavailable";
+              }
+            }
+            
+            async function fetchStats() {
+              try {
+                const r = await fetch('/api/stats');
+                const data = await r.json();
+                
+                document.getElementById('cpuVal').textContent = data.cpu_percent.toFixed(1) + '%';
+                document.getElementById('cpuBar').style.width = data.cpu_percent + '%';
+                
+                document.getElementById('ramVal').textContent = data.ram_percent.toFixed(1) + '%';
+                document.getElementById('ramBar').style.width = data.ram_percent + '%';
+                document.getElementById('ramUsedText').textContent = data.ram_used + ' Used';
+              } catch (e) {}
+            }
+            
+            // Poll slowly when idle, fast when generating
+            function setPolling(fast) {
+              clearInterval(statPollInterval);
+              fetchStats(); // call immediately
+              statPollInterval = setInterval(fetchStats, fast ? 1000 : 3000);
+            }
+            
+            fetchSysInfo();
+            setPolling(false);
+            // -----------------------------
 
             async function loadModels() {
               try {
@@ -631,15 +738,17 @@ jobs:
               const text = userInput.value.trim();
               if (!text) return;
               if (!currentModel) return alert('Please select a model first.');
-
+              
               appendMessage('user', text);
               messageHistory.push({ role: 'user', content: text });
               userInput.value = ''; userInput.style.height = 'auto';
-
               sendButton.style.display = 'none'; stopButton.style.display = 'flex';
               isStreaming = true; controller = new AbortController();
               appendMessage('assistant', 'Processing', true);
-
+              
+              // Poll fast while generating
+              setPolling(true);
+              
               let fullContent = '';
               try {
                 const response = await fetch('/api/chat', {
@@ -649,12 +758,12 @@ jobs:
                     temperature: parseFloat(temperatureEl.value), max_tokens: parseInt(maxTokensEl.value)
                   })
                 });
+                
                 if (!response.ok) throw new Error(`Server returned ${response.status}`);
-
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '', streamError = null;
-
+                
                 while (true) {
                   const { done, value } = await reader.read();
                   if (done) break;
@@ -675,6 +784,7 @@ jobs:
                     } catch { }
                   }
                 }
+                
                 if (streamError) throw new Error(streamError);
                 updateLastAssistantMessage(fullContent, true);
                 messageHistory.push({ role: 'assistant', content: fullContent });
@@ -689,8 +799,12 @@ jobs:
                   updateLastAssistantMessage(`⚠️ ${error.message || 'Error generating response.'}`, true);
                 }
               }
+              
               sendButton.style.display = 'flex'; stopButton.style.display = 'none';
               isStreaming = false; controller = null; userInput.focus();
+              
+              // Revert to slow polling
+              setPolling(false);
             }
 
             loadModels().then(() => {
@@ -704,10 +818,6 @@ jobs:
           </script>
           </body>
           </html>
-          '''
-
-          if __name__ == "__main__":
-              uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
           PYEOF
           echo "✅ Server script written"
 
@@ -718,6 +828,7 @@ jobs:
           echo "──────────────────────────────────────────"
           nohup python ollama_server.py > /tmp/webui.log 2>&1 &
           echo $! > /tmp/webui.pid
+
           ready=false
           for i in $(seq 1 15); do
             if curl -sf "http://localhost:${PORT}" > /dev/null 2>&1; then
@@ -747,6 +858,7 @@ jobs:
           echo "──────────────────────────────────────────"
           cloudflared tunnel --url "http://127.0.0.1:${PORT}" --protocol http2 > tunnel.log 2>&1 &
           TUNNEL_PID=$!
+
           echo "⏳ Waiting for tunnel URL..."
           TUNNEL_URL=""
           for i in $(seq 1 30); do
@@ -754,27 +866,31 @@ jobs:
             [ -n "$TUNNEL_URL" ] && break
             sleep 2
           done
+
           if [ -z "$TUNNEL_URL" ]; then
             echo "❌ Could not get a tunnel URL. Tunnel log:"
             cat tunnel.log
             exit 1
           fi
+
           echo ""
           echo "╔═══════════════════════════════════════════════════════════════════╗"
           echo "║              🎉  Y O U R   L L M   I S   R E A D Y  🎉            ║"
           echo "╠═══════════════════════════════════════════════════════════════════╣"
           echo "║  🔗  $TUNNEL_URL"
           echo "╚═══════════════════════════════════════════════════════════════════╝"
+
           {
             echo "## 🦙 Your LLM web UI is live"
             echo ""
             echo "**URL:** $TUNNEL_URL"
             echo ""
-            echo "**Models downloaded:** 10 optimized for 16GB RAM/8-Core."
+            echo "**Models downloaded:** 24+ Models (0.5B to 7B)"
             echo "**Context:** ${CONTEXT_SIZE} tokens"
             echo ""
-            echo "> This link stays live for as long as this job keeps running (up to the timeout, or until you cancel the run)."
+            echo "> This link stays live for as long as this job keeps running (up to the 6-hour timeout, or until you cancel the run)."
           } >> "$GITHUB_STEP_SUMMARY"
+
           wait "$TUNNEL_PID"
 
       - name: 🧹 Cleanup
