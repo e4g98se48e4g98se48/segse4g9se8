@@ -1,4 +1,5 @@
 name: 🦙 Local LLM Web Interface (Optimized)
+
 on:
   workflow_dispatch:
     inputs:
@@ -31,7 +32,7 @@ jobs:
       - name: 🦙 Show banner
         run: |
           echo "╔═══════════════════════════════════════════════════════════════════╗"
-          echo "║   🦙  L O C A L   L L M   W E B   U I   ( O P T I M I Z E D )     ║"
+          echo "║   🦙  L O C A L   L L M   W E B   U I   ( O P T I M I Z E D )       ║"
           echo "╚═══════════════════════════════════════════════════════════════════╝"
           echo "  📝 Context: ${CONTEXT_SIZE} tokens"
           echo "  🔌 Port:    ${PORT}"
@@ -79,7 +80,6 @@ jobs:
           sudo systemctl disable ollama 2>/dev/null || true
           nohup ollama serve > /tmp/ollama.log 2>&1 &
           echo $! > /tmp/ollama.pid
-
           echo "⏳ Waiting for Ollama to become ready..."
           ready=false
           for i in $(seq 1 30); do
@@ -103,7 +103,6 @@ jobs:
           echo "──────────────────────────────────────────"
           
           MODELS=(
-            # --- Qwen Family (General & Code) ---
             "qwen2.5:0.5b"
             "qwen2.5:1.5b"
             "qwen2.5:3b"
@@ -112,36 +111,23 @@ jobs:
             "qwen2.5-coder:1.5b"
             "qwen2.5-coder:3b"
             "qwen2.5-coder:7b"
-            
-            # --- DeepSeek Family ---
             "deepseek-r1:1.5b"
             "deepseek-r1:7b"
             "deepseek-coder:1.3b"
             "deepseek-coder:6.7b"
-            
-            # --- Llama Family ---
             "llama3.2:1b"
             "llama3.2:3b"
             "tinyllama"
-            
-            # --- Gemma Family ---
             "gemma2:2b"
-            
-            # --- Phi Family ---
             "phi3.5"
             "phi3:mini"
-            
-            # --- Mistral Family ---
             "mistral:7b"
             "openhermes"
             "dolphin-mistral"
-            
-            # --- Small & Fast Alternates ---
             "smollm:1.7b"
             "orca-mini:3b"
             "stablelm2:1.6b"
           )
-
           total=${#MODELS[@]}
           current=0
           for model in "${MODELS[@]}"; do
@@ -184,6 +170,14 @@ jobs:
           PORT = int(os.getenv("PORT", "7860"))
 
           app = FastAPI(title="Local LLM UI (Optimized)")
+
+          SYSTEM_PROMPT = (
+              "You are a precise, highly intelligent, and helpful AI assistant. "
+              "CRITICAL LANGUAGE RULE: Always detect the language of the user's latest input and respond fluently in that exact same language. "
+              "If the user speaks Persian (Farsi), you MUST reply in natural, correct, and fluent Persian. "
+              "Never mix languages randomly or generate gibberish/nonsense text. "
+              "Be concise, structured, direct, and avoid unnecessary filler text."
+          )
 
           class ChatMessage(BaseModel):
               role: str
@@ -239,7 +233,11 @@ jobs:
 
           @app.post("/api/chat")
           async def chat(request: ChatRequest):
-              ollama_messages = [{"role": m.role, "content": m.content} for m in request.messages]
+              ollama_messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+              for m in request.messages:
+                  if m.role != "system":
+                      ollama_messages.append({"role": m.role, "content": m.content})
+
               async def generate():
                   try:
                       async with httpx.AsyncClient(timeout=180) as client:
@@ -280,21 +278,18 @@ jobs:
                       logger.exception("chat stream failed")
                       yield f"data: {json.dumps({'error': str(exc)})}\n\n"
                   yield "data: [DONE]\n\n"
-
               return StreamingResponse(generate(), media_type="text/event-stream")
 
           HTML_TEMPLATE = r'''
           <!DOCTYPE html>
-          <html lang="en">
+          <html lang="fa" dir="rtl">
           <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>Local LLM Studio</title>
-          
           <link rel="preconnect" href="https://fonts.googleapis.com">
           <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Vazirmatn:wght@400;500;600&display=swap" rel="stylesheet">
-          
           <script src="https://cdn.jsdelivr.net/npm/marked@4.3.0/marked.min.js"></script>
           <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
           <link id="hljsTheme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
@@ -302,7 +297,6 @@ jobs:
           <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
           <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
           <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
-          
           <style>
             :root {
               --bg: #09090b;
@@ -324,12 +318,12 @@ jobs:
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
               background: var(--bg); color: var(--text); height: 100vh; display: flex; overflow: hidden;
-              font-family: 'Inter', 'Vazirmatn', sans-serif;
+              font-family: 'Vazirmatn', 'Inter', sans-serif; text-align: right; direction: rtl;
               background-image: radial-gradient(circle at 15% 50%, rgba(16, 185, 129, 0.04), transparent 25%),
                                 radial-gradient(circle at 85% 30%, rgba(6, 182, 212, 0.04), transparent 25%);
             }
             .sidebar {
-              width: 290px; background: var(--sidebar); border-right: 1px solid var(--border);
+              width: 290px; background: var(--sidebar); border-left: 1px solid var(--border);
               backdrop-filter: var(--glass); -webkit-backdrop-filter: var(--glass);
               display: flex; flex-direction: column; padding: 20px; flex-shrink: 0; z-index: 10;
             }
@@ -340,7 +334,6 @@ jobs:
               transition: all 0.2s ease; font-family: inherit;
             }
             .new-chat-btn:hover { border-color: var(--accent); box-shadow: 0 0 15px var(--accent-glow); }
-            
             .settings-group { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--text-secondary); }
             .settings-group label { display: flex; justify-content: space-between; align-items: center; }
             .settings-group input[type="range"] { width: 100%; accent-color: var(--cyan); margin-top: 4px; }
@@ -351,8 +344,6 @@ jobs:
             }
             #modelSelect:focus { border-color: var(--cyan); }
             #modelSelect option { background: var(--bg); }
-            
-            /* System Stats UI */
             .system-stats {
               background: rgba(0,0,0,0.3); border: 1px solid var(--border);
               border-radius: 12px; padding: 14px; margin-top: 20px;
@@ -364,7 +355,6 @@ jobs:
             #sysSpecs { color: var(--text-secondary); margin-bottom: 8px; line-height: 1.4; }
             .progress-bar { width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; overflow: hidden; margin-top: 2px; }
             .progress-fill { height: 100%; transition: width 0.3s ease; }
-
             .sidebar-footer {
               margin-top: auto; border-top: 1px solid var(--border); padding-top: 16px;
               font-size: 12px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 10px;
@@ -373,13 +363,11 @@ jobs:
               background: rgba(6, 182, 212, 0.1); color: var(--cyan); padding: 6px 10px;
               border-radius: 6px; font-weight: 600; width: fit-content; border: 1px solid rgba(6, 182, 212, 0.2);
             }
-            .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; box-shadow: 0 0 8px currentColor; }
+            .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; box-shadow: 0 0 8px currentColor; }
             .status-dot.ok { background: var(--ok); color: var(--ok); }
             .status-dot.bad { background: var(--danger); color: var(--danger); }
-            
             .main-content { flex: 1; display: flex; flex-direction: column; height: 100vh; position: relative; }
             .chat-container { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 20px 0 150px 0; scroll-behavior: smooth; }
-            
             .message-row {
               width: 100%; display: flex; justify-content: center; padding: 24px 20px;
               border-bottom: 1px solid rgba(255,255,255,0.02); animation: fadeIn 0.3s ease;
@@ -387,7 +375,6 @@ jobs:
             @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
             .message-row.user { background: var(--user-bg); }
             .message-row.error .message-body { color: var(--danger); }
-            
             .message-inner { max-width: 850px; width: 100%; display: flex; gap: 20px; line-height: 1.7; font-size: 15px; }
             .avatar {
               width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
@@ -395,26 +382,24 @@ jobs:
             }
             .avatar.user { background: linear-gradient(135deg, var(--cyan), #0284c7); }
             .avatar.assistant { background: linear-gradient(135deg, var(--accent), #059669); }
-            
-            .message-body { flex: 1; overflow-x: auto; min-width: 0; padding-top: 4px; }
+            .message-body { flex: 1; overflow-x: auto; min-width: 0; padding-top: 4px; text-align: right; }
             .message-body p { margin: 0 0 16px; }
             .message-body p:last-child { margin-bottom: 0; }
             .message-body pre {
               background: var(--code-bg); color: #e2e8f0; padding: 35px 16px 16px; border-radius: 10px;
-              overflow-x: auto; margin: 16px 0; border: 1px solid var(--border); position: relative;
+              overflow-x: auto; margin: 16px 0; border: 1px solid var(--border); position: relative; direction: ltr; text-align: left;
             }
             .message-body code { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px; background: rgba(255,255,255,0.1); padding: 3px 6px; border-radius: 5px; }
             .message-body pre code { background: transparent; padding: 0; }
-            .code-lang { position: absolute; top: 10px; left: 16px; font-size: 12px; color: #64748b; font-weight: 500; }
+            .code-lang { position: absolute; top: 10px; right: 16px; font-size: 12px; color: #64748b; font-weight: 500; }
             .copy-btn {
-              position: absolute; top: 8px; right: 8px; background: rgba(255,255,255,0.1); border: none;
+              position: absolute; top: 8px; left: 8px; background: rgba(255,255,255,0.1); border: none;
               color: #cbd5e1; font-size: 12px; padding: 4px 10px; border-radius: 6px; cursor: pointer; transition: 0.2s;
             }
             .copy-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
             .message-body table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; border-radius: 8px; overflow: hidden; }
-            .message-body th, .message-body td { border: 1px solid var(--border); padding: 10px 14px; text-align: left; }
+            .message-body th, .message-body td { border: 1px solid var(--border); padding: 10px 14px; text-align: right; }
             .message-body th { background: rgba(255,255,255,0.05); font-weight: 600; }
-            
             .input-area-wrapper {
               position: absolute; bottom: 0; left: 0; width: 100%;
               background: linear-gradient(180deg, transparent 0%, var(--bg) 30%);
@@ -429,7 +414,7 @@ jobs:
             .input-box:focus-within { border-color: var(--accent); }
             .input-box textarea {
               flex: 1; background: transparent; border: none; color: var(--text); font-family: inherit;
-              font-size: 15px; resize: none; outline: none; max-height: 200px; min-height: 26px; line-height: 26px;
+              font-size: 15px; resize: none; outline: none; max-height: 200px; min-height: 26px; line-height: 26px; text-align: right;
             }
             .input-box textarea::placeholder { color: #52525b; }
             .send-btn, .stop-btn {
@@ -441,15 +426,13 @@ jobs:
             .send-btn:hover { background: #059669; transform: translateY(-2px); }
             .stop-btn:hover { background: #dc2626; transform: translateY(-2px); }
             .send-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-            
             .loading-dots::after { content: '...'; animation: dots 1.5s steps(4, end) infinite; }
             @keyframes dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
-            
             @media (max-width: 768px) {
-              .sidebar { position: fixed; height: 100vh; transform: translateX(-100%); transition: 0.3s ease; }
-              .sidebar.open { transform: translateX(0); box-shadow: 10px 0 30px rgba(0,0,0,0.5); }
+              .sidebar { position: fixed; height: 100vh; transform: translateX(100%); transition: 0.3s ease; }
+              .sidebar.open { transform: translateX(0); box-shadow: -10px 0 30px rgba(0,0,0,0.5); }
               .menu-btn {
-                display: flex; position: absolute; top: 16px; left: 16px; z-index: 20; width: 40px; height: 40px;
+                display: flex; position: absolute; top: 16px; right: 16px; z-index: 20; width: 40px; height: 40px;
                 align-items: center; justify-content: center; background: var(--input-bg); border: 1px solid var(--border);
                 border-radius: 10px; cursor: pointer; backdrop-filter: var(--glass); color: var(--text);
               }
@@ -462,48 +445,47 @@ jobs:
             <button class="menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')" style="display: none;">☰</button>
             
             <div class="sidebar">
-              <button class="new-chat-btn" onclick="clearChat()"><span>＋</span> New Chat</button>
+              <button class="new-chat-btn" onclick="clearChat()"><span>＋</span> گفتگوی جدید</button>
               
               <div class="settings-group">
-                <label style="margin-bottom: 4px; color: var(--text);">Model Selection</label>
+                <label style="margin-bottom: 4px; color: var(--text);">انتخاب مدل هوش مصنوعی</label>
                 <select id="modelSelect"></select>
                 
                 <div style="margin-top: 10px;">
-                  <label>Temperature <span id="tempVal" style="color: var(--cyan);">0.7</span></label>
+                  <label>خلاقیت (Temperature) <span id="tempVal" style="color: var(--cyan);">0.7</span></label>
                   <input type="range" id="temperature" min="0" max="2" step="0.1" value="0.7">
                 </div>
                 
                 <div style="margin-top: 10px;">
-                  <label>Max Tokens <span id="tokenVal" style="color: var(--cyan);">2048</span></label>
+                  <label>حداکثر توکن (Max Tokens) <span id="tokenVal" style="color: var(--cyan);">2048</span></label>
                   <input type="range" id="maxTokens" min="128" max="4096" step="128" value="2048">
                 </div>
               </div>
 
-              <!-- System Resource Monitor -->
               <div class="system-stats">
-                <div class="stat-title">🖥️ Server Hardware</div>
-                <div id="sysSpecs">Loading...</div>
+                <div class="stat-title">🖥️ سخت‌افزار سرور</div>
+                <div id="sysSpecs">در حال بارگذاری...</div>
                 
-                <div class="stat-title" style="margin-top: 6px;">📊 Live Usage</div>
+                <div class="stat-title" style="margin-top: 6px;">📊 مصرف لحظه‌ای</div>
                 
                 <div class="stat-row">
-                  <span>CPU:</span>
+                  <span>پردازنده (CPU):</span>
                   <span id="cpuVal" class="stat-value" style="color: var(--cyan);">0%</span>
                 </div>
                 <div class="progress-bar"><div id="cpuBar" class="progress-fill" style="background: var(--cyan); width: 0%;"></div></div>
                 
                 <div class="stat-row" style="margin-top: 8px;">
-                  <span>RAM:</span>
+                  <span>حافظه رم (RAM):</span>
                   <span id="ramVal" class="stat-value" style="color: var(--accent);">0%</span>
                 </div>
                 <div class="progress-bar"><div id="ramBar" class="progress-fill" style="background: var(--accent); width: 0%;"></div></div>
-                <div id="ramUsedText" style="text-align: right; font-size: 10px; color: var(--text-secondary); margin-top: 2px;">0 GB Used</div>
+                <div id="ramUsedText" style="text-align: left; font-size: 10px; color: var(--text-secondary); margin-top: 2px;">0 GB مصرف شده</div>
               </div>
 
               <div class="sidebar-footer">
-                <span class="model-tag" id="currentModelTag">📦 Loading...</span>
-                <span id="statusIndicator"><span class="status-dot ok"></span>Checking connection...</span>
-                <span id="tokenCounter" style="color: var(--cyan);">Tokens generated: 0</span>
+                <span class="model-tag" id="currentModelTag">📦 در حال بارگذاری...</span>
+                <span id="statusIndicator"><span class="status-dot ok"></span>در حال بررسی اتصال...</span>
+                <span id="tokenCounter" style="color: var(--cyan);">توکن‌های تولید شده: 0</span>
               </div>
             </div>
 
@@ -516,10 +498,9 @@ jobs:
                   </div>
                 </div>
               </div>
-
               <div class="input-area-wrapper">
                 <div class="input-box">
-                  <textarea id="userInput" placeholder="Message local model... (Markdown, code, math supported)" rows="1"></textarea>
+                  <textarea id="userInput" placeholder="پیام خود را بنویسید... (پشتیبانی کامل از فارسی، مارک‌داون و کد)" rows="1"></textarea>
                   <button class="send-btn" id="sendButton" onclick="sendMessage()">↑</button>
                   <button class="stop-btn" id="stopButton" onclick="stopGenerating()">■</button>
                 </div>
@@ -550,12 +531,12 @@ jobs:
                 }
                 const btn = document.createElement('button');
                 btn.className = 'copy-btn';
-                btn.textContent = 'Copy';
+                btn.textContent = 'کپی';
                 btn.onclick = () => {
-                  navigator.clipboard.writeText(pre.innerText.replace(/^Copy\s*/, '')).then(() => {
-                    btn.textContent = 'Copied!';
+                  navigator.clipboard.writeText(pre.innerText.replace(/^کپی\s*/, '')).then(() => {
+                    btn.textContent = 'کپی شد!';
                     btn.style.background = 'var(--ok)';
-                    setTimeout(() => { btn.textContent = 'Copy'; btn.style.background = ''; }, 2000);
+                    setTimeout(() => { btn.textContent = 'کپی'; btn.style.background = ''; }, 2000);
                   });
                 };
                 pre.appendChild(btn);
@@ -577,7 +558,7 @@ jobs:
               if (!opts.loading) decorateCodeBlocks(el);
             }
 
-            const STORE_KEY = 'llama-ui-glass-v1';
+            const STORE_KEY = 'llama-ui-glass-v2';
             const chatContainer = document.getElementById('chatContainer');
             const userInput = document.getElementById('userInput');
             const sendButton = document.getElementById('sendButton');
@@ -592,14 +573,13 @@ jobs:
             let isStreaming = false, totalTokens = 0, messageHistory = [], controller = null, currentModel = null;
             let statPollInterval;
 
-            // --- Stats & SysInfo Logic ---
             async function fetchSysInfo() {
               try {
                 const r = await fetch('/api/sysinfo');
                 const data = await r.json();
-                document.getElementById('sysSpecs').innerHTML = `OS: ${data.os}<br>CPU: ${data.cpu_threads} Cores<br>RAM: ${data.ram_total}`;
+                document.getElementById('sysSpecs').innerHTML = `سیستم: ${data.os}<br>پردازنده: ${data.cpu_threads} هسته<br>رم: ${data.ram_total}`;
               } catch (e) {
-                document.getElementById('sysSpecs').innerText = "Unavailable";
+                document.getElementById('sysSpecs').innerText = "غیرقابل دسترس";
               }
             }
             
@@ -607,47 +587,43 @@ jobs:
               try {
                 const r = await fetch('/api/stats');
                 const data = await r.json();
-                
                 document.getElementById('cpuVal').textContent = data.cpu_percent.toFixed(1) + '%';
                 document.getElementById('cpuBar').style.width = data.cpu_percent + '%';
-                
                 document.getElementById('ramVal').textContent = data.ram_percent.toFixed(1) + '%';
                 document.getElementById('ramBar').style.width = data.ram_percent + '%';
-                document.getElementById('ramUsedText').textContent = data.ram_used + ' Used';
+                document.getElementById('ramUsedText').textContent = data.ram_used + ' مصرف شده';
               } catch (e) {}
             }
             
-            // Poll slowly when idle, fast when generating
             function setPolling(fast) {
               clearInterval(statPollInterval);
-              fetchStats(); // call immediately
+              fetchStats();
               statPollInterval = setInterval(fetchStats, fast ? 1000 : 3000);
             }
             
             fetchSysInfo();
             setPolling(false);
-            // -----------------------------
 
             async function loadModels() {
               try {
                 const resp = await fetch('/api/models');
-                if (!resp.ok) throw new Error('Failed to fetch models');
+                if (!resp.ok) throw new Error('خطا در دریافت مدل‌ها');
                 const data = await resp.json();
                 const models = data.models || [];
                 if (models.length === 0) {
-                  modelSelect.innerHTML = '<option value="">No models found</option>'; return;
+                  modelSelect.innerHTML = '<option value="">مدلی یافت نشد</option>'; return;
                 }
                 modelSelect.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
                 modelSelect.value = models[0];
                 currentModel = models[0];
                 updateModelTag();
               } catch (e) {
-                modelSelect.innerHTML = '<option value="">Error loading models</option>';
+                modelSelect.innerHTML = '<option value="">خطا در بارگذاری مدل‌ها</option>';
               }
             }
 
             function updateModelTag() {
-              currentModelTag.textContent = currentModel ? '📦 ' + currentModel : '📦 (no model)';
+              currentModelTag.textContent = currentModel ? '📦 ' + currentModel : '📦 (بدون مدل)';
             }
 
             modelSelect.addEventListener('change', function() {
@@ -680,7 +656,7 @@ jobs:
                 if (Array.isArray(s.messageHistory)) {
                   messageHistory = s.messageHistory; totalTokens = s.totalTokens || 0;
                   messageHistory.forEach(m => appendMessage(m.role, m.content));
-                  tokenCounter.textContent = `Tokens generated: ${totalTokens}`;
+                  tokenCounter.textContent = `توکن‌های تولید شده: ${totalTokens}`;
                 }
               } catch { }
             }
@@ -688,8 +664,8 @@ jobs:
             async function checkHealth() {
               try {
                 const r = await fetch('/api/health');
-                statusIndicator.innerHTML = r.ok ? '<span class="status-dot ok"></span>Connected to Ollama' : '<span class="status-dot bad"></span>Ollama unreachable';
-              } catch { statusIndicator.innerHTML = '<span class="status-dot bad"></span>Ollama unreachable'; }
+                statusIndicator.innerHTML = r.ok ? '<span class="status-dot ok"></span>متصل به Ollama' : '<span class="status-dot bad"></span>قطع ارتباط با Ollama';
+              } catch { statusIndicator.innerHTML = '<span class="status-dot bad"></span>قطع ارتباط با Ollama'; }
             }
             checkHealth(); setInterval(checkHealth, 15000);
 
@@ -699,6 +675,7 @@ jobs:
             userInput.addEventListener('keydown', function (e) {
               if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
             });
+
             temperatureEl.addEventListener('input', function () { document.getElementById('tempVal').textContent = this.value; saveState(); });
             maxTokensEl.addEventListener('input', function () { document.getElementById('tokenVal').textContent = this.value; saveState(); });
 
@@ -727,7 +704,7 @@ jobs:
             function clearChat() {
               const rows = chatContainer.querySelectorAll('.message-row');
               for (let i = 1; i < rows.length; i++) rows[i].remove();
-              messageHistory = []; totalTokens = 0; tokenCounter.textContent = 'Tokens generated: 0';
+              messageHistory = []; totalTokens = 0; tokenCounter.textContent = 'توکن‌های تولید شده: 0';
               saveState();
             }
 
@@ -737,16 +714,15 @@ jobs:
               if (isStreaming) return;
               const text = userInput.value.trim();
               if (!text) return;
-              if (!currentModel) return alert('Please select a model first.');
+              if (!currentModel) return alert('لطفاً ابتدا یک مدل انتخاب کنید.');
               
               appendMessage('user', text);
               messageHistory.push({ role: 'user', content: text });
               userInput.value = ''; userInput.style.height = 'auto';
               sendButton.style.display = 'none'; stopButton.style.display = 'flex';
               isStreaming = true; controller = new AbortController();
-              appendMessage('assistant', 'Processing', true);
+              appendMessage('assistant', 'در حال پردازش', true);
               
-              // Poll fast while generating
               setPolling(true);
               
               let fullContent = '';
@@ -759,7 +735,7 @@ jobs:
                   })
                 });
                 
-                if (!response.ok) throw new Error(`Server returned ${response.status}`);
+                if (!response.ok) throw new Error(`خطای سرور: ${response.status}`);
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let buffer = '', streamError = null;
@@ -789,21 +765,19 @@ jobs:
                 updateLastAssistantMessage(fullContent, true);
                 messageHistory.push({ role: 'assistant', content: fullContent });
                 totalTokens += Math.ceil(fullContent.length / 4);
-                tokenCounter.textContent = `Tokens generated: ${totalTokens}`;
+                tokenCounter.textContent = `توکن‌های تولید شده: ${totalTokens}`;
                 saveState();
               } catch (error) {
                 if (error.name === 'AbortError') {
-                  updateLastAssistantMessage(fullContent + '\n\n*(stopped)*', true);
+                  updateLastAssistantMessage(fullContent + '\n\n*(متوقف شد)*', true);
                   if (fullContent) { messageHistory.push({ role: 'assistant', content: fullContent }); saveState(); }
                 } else {
-                  updateLastAssistantMessage(`⚠️ ${error.message || 'Error generating response.'}`, true);
+                  updateLastAssistantMessage(`⚠️ ${error.message || 'خطا در تولید پاسخ.'}`, true);
                 }
               }
               
               sendButton.style.display = 'flex'; stopButton.style.display = 'none';
               isStreaming = false; controller = null; userInput.focus();
-              
-              // Revert to slow polling
               setPolling(false);
             }
 
@@ -813,13 +787,13 @@ jobs:
                 currentModel = modelSelect.value; updateModelTag();
               }
               const welcome = document.getElementById('welcomeMsg');
-              renderInto(welcome, `System ready. The active model is **${currentModel || 'loading'}**. Code, math, and tables are fully supported in this glassmorphic environment.`);
+              renderInto(welcome, `سیستم آماده است. مدل فعال: **${currentModel || 'در حال بارگذاری'}**. پاسخ‌دهی به زبان فارسی، مارک‌داون و کدهای برنامه‌نویسی کاملاً پشتیبانی می‌شود.`);
             });
           </script>
           </body>
           </html>
           '''
-          
+
           if __name__ == "__main__":
               uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="info")
           PYEOF
@@ -828,11 +802,10 @@ jobs:
       - name: 🌐 Start web server
         run: |
           echo "──────────────────────────────────────────"
-          echo " 🌐  Starting web UI"
+          echo " 🌐   Starting web UI"
           echo "──────────────────────────────────────────"
           nohup python ollama_server.py > /tmp/webui.log 2>&1 &
           echo $! > /tmp/webui.pid
-
           ready=false
           for i in $(seq 1 15); do
             if curl -sf "http://localhost:${PORT}" > /dev/null 2>&1; then
@@ -858,11 +831,10 @@ jobs:
       - name: 🌐 Create tunnel and wait
         run: |
           echo "──────────────────────────────────────────"
-          echo " 🌐  Creating Cloudflare tunnel"
+          echo " 🌐   Creating Cloudflare tunnel"
           echo "──────────────────────────────────────────"
           cloudflared tunnel --url "http://127.0.0.1:${PORT}" --protocol http2 > tunnel.log 2>&1 &
           TUNNEL_PID=$!
-
           echo "⏳ Waiting for tunnel URL..."
           TUNNEL_URL=""
           for i in $(seq 1 30); do
@@ -870,20 +842,17 @@ jobs:
             [ -n "$TUNNEL_URL" ] && break
             sleep 2
           done
-
           if [ -z "$TUNNEL_URL" ]; then
             echo "❌ Could not get a tunnel URL. Tunnel log:"
             cat tunnel.log
             exit 1
           fi
-
           echo ""
           echo "╔═══════════════════════════════════════════════════════════════════╗"
-          echo "║              🎉  Y O U R   L L M   I S   R E A D Y  🎉            ║"
+          echo "║                  🎉  Y O U R   L L M   I S   R E A D Y  🎉         ║"
           echo "╠═══════════════════════════════════════════════════════════════════╣"
           echo "║  🔗  $TUNNEL_URL"
           echo "╚═══════════════════════════════════════════════════════════════════╝"
-
           {
             echo "## 🦙 Your LLM web UI is live"
             echo ""
@@ -894,7 +863,6 @@ jobs:
             echo ""
             echo "> This link stays live for as long as this job keeps running (up to the 6-hour timeout, or until you cancel the run)."
           } >> "$GITHUB_STEP_SUMMARY"
-
           wait "$TUNNEL_PID"
 
       - name: 🧹 Cleanup
